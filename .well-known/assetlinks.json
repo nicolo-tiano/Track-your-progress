@@ -1,0 +1,8 @@
+[{
+      "relation": ["delegate_permission/common.handle_all_urls"],
+      "target": {
+        "namespace": "android_app",
+        "package_name": "com.nicolotiano.trackyourprogress",
+        "sha256_cert_fingerprints": ["85:49:FA:B1:1E:03:BB:D4:FE:E2:69:55:27:1F:67:40:2B:A0:D6:B1:62:FB:81:41:70:4F:B5:15:AA:7E:96:E6"]
+      }
+    }]
