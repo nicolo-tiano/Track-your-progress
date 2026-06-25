@@ -1806,13 +1806,11 @@ function attachEvents() {
         if (!STATE.friends.list.find(f=>f.username===from))
           STATE.friends.list = [...STATE.friends.list, { username:from, photo:null }];
         await dbSet("friendsList", STATE.friends.list);
-        render();
-        const fd = await FB.fetchFriendData(STATE.friends.myUsername, from);
-        if (fd?.photo) {
-          STATE.friends.list = STATE.friends.list.map(f=>f.username===from?{...f,photo:fd.photo}:f);
-          await dbSet("friendsList", STATE.friends.list);
-          render();
+        // pubblica subito i PR così l'altro li vede appena diventa amico
+        if (STATE.prs.length > 0) {
+          FB.publishPRs(STATE.friends.myUsername, STATE.prs).catch(()=>{});
         }
+        render();
       } catch(e) { console.warn("acceptRequest:", e); }
     });
   });
@@ -2285,6 +2283,7 @@ async function startFriendsListener(username) {
   const FB = await waitFB();
   FB.listenNotifications(username, (requests, friends) => {
     const prevReqCount = STATE.friends.requests.length;
+    const prevFriendCount = STATE.friends.list.length;
     STATE.friends.requests = requests;
 
     // aggiorna lista amici — Supabase è la sorgente di verità
@@ -2297,17 +2296,20 @@ async function startFriendsListener(username) {
     STATE.friends.list = STATE.friends.list.filter(f=>friends.includes(f.username));
     dbSet("friendsList", STATE.friends.list);
 
+    // se è arrivato un nuovo amico, pubblica subito i PR così lui li vede
+    if (STATE.friends.list.length > prevFriendCount && STATE.prs.length > 0) {
+      waitFB().then(FB2 => FB2.publishPRs(username, STATE.prs)).catch(()=>{});
+    }
+
     // aggiorna UI
     if (STATE.tab==="friends" && STATE.appState==="app") {
       render();
     } else {
-      // aggiorna solo il badge senza fare un render completo
       const badge = document.getElementById("friends-tab-badge");
       if (badge) {
         badge.textContent = requests.length > 0 ? requests.length : "";
         badge.style.display = requests.length > 0 ? "flex" : "none";
       } else if (requests.length !== prevReqCount) {
-        // badge non esiste ancora, forza un render leggero della tab bar
         render();
       }
     }
