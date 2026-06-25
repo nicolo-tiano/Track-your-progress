@@ -11,18 +11,25 @@
 <meta name="application-name" content="Track your Progress" />
 <meta name="description" content="Gym tracker app — log workouts, track PRs, monitor progression." />
 <title>Track your Progress</title>
-<link rel="manifest" href="manifest.json" />
-<link rel="apple-touch-icon" href="apple-touch-icon.png" />
-<link rel="icon" href="icon-192.png" />
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%230A0A0A'/><text y='.9em' font-size='78' x='10'>🏋️</text></svg>" />
 <script>
-// Registra il Service Worker
-if ("serviceWorker" in navigator) {
-  window.addEventListener("load", () => {
-    navigator.serviceWorker.register("sw.js")
-      .then(reg => console.log("SW registrato:", reg.scope))
-      .catch(err => console.warn("SW errore:", err));
-  });
-}
+(function(){
+  const manifest = {
+    name: "Track your Progress",
+    short_name: "TrackProgress",
+    description: "Gym tracker — log workouts, track PRs, monitor progression.",
+    start_url: ".",
+    display: "standalone",
+    background_color: "#0A0A0A",
+    theme_color: "#0A0A0A",
+    orientation: "portrait",
+    icons: [{ src: "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'><rect width='512' height='512' rx='100' fill='%230A0A0A'/><text y='.85em' font-size='380' x='60'>🏋️</text></svg>", sizes: "512x512", type: "image/svg+xml" }]
+  };
+  const blob = new Blob([JSON.stringify(manifest)], {type:"application/json"});
+  const link = document.createElement("link");
+  link.rel = "manifest"; link.href = URL.createObjectURL(blob);
+  document.head.appendChild(link);
+})();
 </script>
 <style>
   *, *::before, *::after { box-sizing: border-box; -webkit-tap-highlight-color: transparent; margin: 0; padding: 0; }
@@ -300,17 +307,15 @@ if ("serviceWorker" in navigator) {
     async publishPRs(username, prs) {
       try {
         const safePrs = Array.isArray(prs) ? prs : [];
-        await patch("users","username",username, {
+        // Legge riga esistente e fa upsert completo — evita problemi jsonb con patch
+        const existing = await getRow("users","username",username);
+        await upsert("users", {
+          ...(existing || { logs:{}, friends:[], requests:[] }),
+          username,
           prs: safePrs,
           updated_at: new Date().toISOString()
         });
-      } catch(e) {
-        // patch fallisce se la riga non esiste ancora — prova upsert
-        try {
-          const safePrs = Array.isArray(prs) ? prs : [];
-          await upsert("users", { username, prs: safePrs, logs:{}, friends:[], requests:[], updated_at: new Date().toISOString() });
-        } catch(e2) { console.warn("publishPRs:", e2); }
-      }
+      } catch(e) { console.warn("publishPRs:", e); }
     },
 
     // ── RICHIESTA AMICIZIA ────────────────────────────────────────
@@ -377,7 +382,9 @@ if ("serviceWorker" in navigator) {
     async fetchFriendData(myUsername, friendUsername) {
       const myRow = await getRow("users","username",myUsername);
       if (!(myRow?.friends||[]).includes(friendUsername)) throw new Error("NOT_FRIENDS");
-      return await getRow("users","username",friendUsername);
+      const friendRow = await getRow("users","username",friendUsername);
+      console.log("fetchFriendData result:", JSON.stringify(friendRow?.prs));
+      return friendRow;
     },
 
     // ── CARICA MIO PROFILO ────────────────────────────────────────
@@ -1480,6 +1487,10 @@ function attachEvents() {
     el.addEventListener("click", () => {
       STATE.tab = el.dataset.tab;
       STATE.settings.subPage = null;
+      // quando apri la tab amici, forza pubblicazione PR aggiornati
+      if (STATE.tab === "friends" && STATE.friends.myUsername && STATE.prs.length > 0) {
+        waitFB().then(FB => FB.publishPRs(STATE.friends.myUsername, STATE.prs)).catch(()=>{});
+      }
       render();
     });
   });
